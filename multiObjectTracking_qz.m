@@ -42,8 +42,8 @@ while ~isDone(obj.reader)
     save_target(VideoName,i_fram); 
     end
 end
-inte_traj(VideoName);
-traj_cluster(VideoName);
+labels=clear_short_traj(VideoName);
+inte_traj_cluster(VideoName,labels);
 function obj = setupSystemObjects(VideoName)
         % Initialize Video I/O//初始化视频输入/输出
         % Create objects for reading a video from a file, drawing the tracked//创建用于从文件读取视频的对象，绘制跟踪
@@ -283,6 +283,7 @@ function savemat(VideoName)
     imwrite(frame,savfile);  
   end
 end
+
 %……显示轨迹
 function trajectory_show(centroids)
     figure(1);
@@ -321,8 +322,9 @@ load(savtra);
      dlmwrite(outputFileName,staticId,'-append');
  end
 end
-%将轨迹综合
-function inte_traj(VideoName)
+
+%%清除较短的轨迹
+function labels=clear_short_traj(VideoName)
     ans=pwd;
     ans1=strcat(ans,'\');
     ans2=strcat(ans,'\',VideoName(1:find(VideoName=='.')-1));
@@ -330,46 +332,93 @@ function inte_traj(VideoName)
     bns=strcat(ans2,'\*.txt');
     bns1=strcat(ans2,'\');
     file=dir(bns);
-    C=[];
-    for n=1:length(file)
-       % temp=textread([ans2,file(n).name],'1 2');
-     % cc=[bns1,file(n).name];
-      fid=fopen([bns1,file(n).name]);
-      B=textscan(fid,'%f,%f,%f,%f,%f');
-      C=[B{2} B{3}];
-       outputFileName = sprintf('result.txt'); %for Scurv.avi
-        % outputFileName=strcat('result_',num2str(uniqueId(i_uni)),'.txt');
-         dlmwrite(outputFileName,C,'-append');
-
-       % temp=dlmread([ans2,file(n).name],',',1);
-      %  eval([file(n).name(1:end-4),'=temp;'])
+    labels=[]
+    for  n=1:length(file)
+        x=strcat('result_',num2str(n),'.txt');
+        y=load(x);
+        if size(y,1)<5
+            labels(n)=0;
+        else 
+            labels(n)=1;
+        end
     end
 end
-%轨迹聚类
-function traj_cluster(VideoName)
-    figure(2);
+%将轨迹综合
+function inte_traj_cluster(VideoName,labels)
+     %%整理轨迹数据 保留x，y值
     ans=pwd;
-    ans=strcat(ans,'\',VideoName(1:find(VideoName=='.')-1));
-    x=load('result.txt');
-    num=length(x);
-    column=2;
-    %x=zeros(num,2);
-
+    ans1=strcat(ans,'\');
+    ans2=strcat(ans,'\');
+    addpath(ans2);
+    bns=strcat(ans2,VideoName(1:find(VideoName=='.')-1),'\');
+    bns1=strcat(bns,'\*.txt');
+    file=dir(bns1);
+    %%建立矩阵
+    maxline=0;
+    for n=1:length(file)    
+        cc=[bns,file(n).name];
+        c=load(cc);
+       if maxline<size(c)
+           maxline=size(c,1);
+       end
+    end
+    %%合并数据
+    result=[];
+    for n=1:length(file)   
+        if labels(n)==1
+        B_temp = zeros(maxline, 1);
+        C_temp = zeros(maxline, 1);
+        cc=[bns,file(n).name];
+        [data1 B C  data4 data5] = textread(cc,'%f%f%f%f%f','delimiter', ',')
+        %[B,C]=textread('result_1.txt','%*%f,%f%*[^\n]','delimiter', ',')
+        fid=fopen([ans2,file(n).name]);
+       % B=textscan(fid,'%f,%f,%f,%f,%f');
+        %C=[B{2} B{3}];
+    %    B_temp(1:length(B)) = B{2};
+     %   C_temp(1:length(C)) = B{3};
+        B_temp(1:length(B)) = B;
+        C_temp(1:length(C)) = C;    
+        result=[result B_temp C_temp]    
+        end
+    end
+    %%求解关系矩阵
+    R_matrix=ones(size(result,2)/2);
+    for i_f=1:size(result,2)/2
+        traj_a=[result(:,2*i_f-1) result(:,2*i_f)];
+        for j_f=1:size(result,2)/2
+            if i_f==j_f
+                 R_matrix(i_f,j_f)=0;
+            else
+            traj_b=[result(:,2*j_f-1) result(:,2*j_f)];
+            R_matrix(i_f,j_f)=traj_compare(traj_a,traj_b);
+            end
+        end
+    end
+   
     K=2;
-    [mu, labels] = kmeans(x, K)
-    %set(gcf,'color','white');
-    %A=imread('picture1.jpg');
-    %B=imshow(A);
-    
-    for i=1:num 
-       if labels(i)==1, 
-          plot(x(i,1),x(i,2),'r*') % 显示第一类
+    label= kmeans(R_matrix,K)
+     for i=1:size(label)
+         trajectory=[result(:,2*i-1) result(:,2*i)]
+          show_traj(trajectory,label(i));
+    end
+end
+%%欧式距离
+function distance=E_distance(a,b,c,d)
+
+   distance =sqrt((a-c)*(a-c)+(b-d)*(b-d));
+end
+%显示轨迹
+function show_traj(trajectory,label)
+        figure(2);
+     for i=1:size(trajectory,1) 
+         if label==1,
+          plot(trajectory(i,1),trajectory(i,2),'r*') % 显示第一类
            set(gca,'ydir','reverse');
          %plot(x(i,2),'r*') % 显示第一类
          hold on 
        else 
-           if labels(i)==2, 
-             plot(x(i,1),x(i,2),'b*') %显示第二类 
+           if label==2, 
+             plot(trajectory(i,1),trajectory(i,2),'b*') %显示第二类 
               set(gca,'ydir','reverse');
              %  plot(x(i,2),'b*') % 显示第一类
                hold on 
@@ -377,9 +426,21 @@ function traj_cluster(VideoName)
        end
     end
 
-    for i=1:size(mu,1)
-         plot(mu(i,1),mu(i,2),'g*')
-         set(gca,'ydir','reverse');
-         hold on 
+end
+%%轨迹相似性测量
+function z=traj_compare(traj_a,traj_b)
+    trajectorydistance=0;
+    smallestdistance=10000;
+    for i=1:size(traj_a,1)
+        for j=1:size(traj_b,1)
+               if E_distance(traj_a(i,1),traj_a(i,2),traj_b(j,1),traj_b(j,2))<smallestdistance
+                smallestdistance=E_distance(traj_a(i,1),traj_a(i,2),traj_b(j,1),traj_b(j,2));
+            end
+        end
+        trajectorydistance=trajectorydistance+smallestdistance;
+        smallestdistance=10000;
     end
+    %num计算轨迹中的nan数值，并排除掉
+     num=numel(traj_a(isnan(traj_a)))/2;
+     z= trajectorydistance/(size(traj_a,1)-num);
 end
